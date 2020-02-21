@@ -1,7 +1,16 @@
+from pointCloudCreation.video2images import *
 from pointCloudCreation.img2pcl.img2pointCloud import *
 
-pathVideo = "inputData/"
-exportImgPath = "outputData/VideoFrames/"
+videoPath = "inputData/VideosInput/"
+exportVideoFramesPath = "outputData/VideoFrames/"
+imgPath = "inputData/CalibData/RedMi_Test/"
 calibrationPath = "inputData/CalibData/CalibrationIMG_RedMi/"
+exportCalibrationParameters = "outputData/CalibrationParameters/"
+exportDisparityMaps = "outputData/DisparityMaps/"
+exportPointCloud = "outputData/PointCloud/"
 
-success = img2pcl_Calibrated(exportImgPath, calibrationPath, (11, 8))
+chessboardDim = (11, 8)
+
+videoINfolder2image(videoPath, exportVideoFramesPath)
+
+success = img2pcl(exportVideoFramesPath, exportPointCloud, exportDisparityMapsFolderPath=exportDisparityMaps)

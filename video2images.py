@@ -53,7 +53,7 @@ def video2img(path: str, exportPath: str, fps=0, nameIndex=0, imgFormat="jpg"):
 
 # -------------------------------------------------------------------------------------------------------------------- #
 
-def videoINfolder2image(folderPath: str, exportPath: str, fps = 0, imgFormat="jpg"):
+def videoINfolder2image(folderPath: str, exportPath: str, fps=0, imgFormat="jpg"):
     videoFiles = []
     fileCounter = 0
     print(str(dt.datetime.now()) + " : Reading files in folder")
