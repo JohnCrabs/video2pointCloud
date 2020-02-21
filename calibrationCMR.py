@@ -1,10 +1,15 @@
-import os
-import cv2 as cv
-import numpy as np
-import datetime as dt
+import os  # Use it for reading the paths
+import cv2 as cv  # Key library for the calibration algorithm
+import numpy as np  # Use it to save the parameters
+import datetime as dt  # Use it for printing messages
+
+#These libraries are needed for finding the focal length of an image
+import PIL.ExifTags
+import PIL.Image
 
 imgFileFormats = (".jpg", ".jpeg", ".png", ".tiff")
 calibFormat = ".npy"
+
 
 def chessboardCalibration(folderIMGpath: str, chessboardDimensions=(3, 3), exportFilePath: str = None):
     """
@@ -13,7 +18,12 @@ def chessboardCalibration(folderIMGpath: str, chessboardDimensions=(3, 3), expor
     :param chessboardDimensions: The size of the chessboard pattern. Default 3x3
     :return: True/False
     """
-    # Take the path of all images in the given folder
+
+    if checkForCalibrationFiles(exportFilePath):
+        print(str(dt.datetime.now()) + " : Calibration files already exist in folder.")
+        return True
+
+    # Read the path of all images in a given folder
     imageFiles = []
     fileCounter = 0
     print(str(dt.datetime.now()) + " : Reading files in folder")
@@ -26,6 +36,7 @@ def chessboardCalibration(folderIMGpath: str, chessboardDimensions=(3, 3), expor
     imageFiles.sort()
     # print(imageFiles) # For debugging
 
+    # Specify calibration parameters
     print(str(dt.datetime.now()) + " : Find calibration points for each image")
     terminationCriteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
     objp = np.zeros((chessboardDimensions[0] * chessboardDimensions[1], 3), np.float32)
@@ -35,11 +46,12 @@ def chessboardCalibration(folderIMGpath: str, chessboardDimensions=(3, 3), expor
     objpoints = []  # 3d point in real world space
     imgpoints = []  # 2d points in image plane.
 
+    # Calibrate the Camera
     procCounter = 1
     for fileName in imageFiles:
         # Print current process
         procIMG = os.path.basename(fileName)
-        percentage = float(procCounter)/float(fileCounter)*100
+        percentage = float(procCounter) / float(fileCounter) * 100
         print(str(dt.datetime.now()) + " : (%d" % procCounter + "/%d)" % fileCounter +
               "Process %s : " % procIMG + "%.2f%%" % percentage)
         procCounter += 1
@@ -69,14 +81,13 @@ def chessboardCalibration(folderIMGpath: str, chessboardDimensions=(3, 3), expor
     ret, mtx, dist, rvecs, tvecs = cv.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
 
     retVal, cameraMtrxL, distCoeffsL, cameraMtrxR, distCoeffsR, R, T, E, F = cv.stereoCalibrate(objpoints,
-                                                                                                 imgpoints,
-                                                                                                 imgpoints,
-                                                                                                 mtx,
-                                                                                                 dist,
-                                                                                                 mtx,
-                                                                                                 dist,
-                                                                                                 gray.shape[::-1])
-
+                                                                                                imgpoints,
+                                                                                                imgpoints,
+                                                                                                mtx,
+                                                                                                dist,
+                                                                                                mtx,
+                                                                                                dist,
+                                                                                                gray.shape[::-1])
     print(str(dt.datetime.now()) + " : Export calibration parameters.")
 
     if exportFilePath is None:
@@ -92,9 +103,15 @@ def chessboardCalibration(folderIMGpath: str, chessboardDimensions=(3, 3), expor
 
     return True
 
+
 # -------------------------------------------------------------------------------------------------------------------- #
 
 def readCalibrationParameters(folderPath: str):
+
+    # Check if all calibration files are in the folder
+    if not checkForCalibrationFiles(folderPath):
+        return False, None, None, None, None, None, None, None
+
     # Take the path of all numpy files in the given folder
     ret = None
     mtx = None
@@ -130,9 +147,10 @@ def readCalibrationParameters(folderPath: str):
 
     return True, ret, mtx, dist, rvecs, tvecs, stereo_R, stereo_T
 
+
 # -------------------------------------------------------------------------------------------------------------------- #
 
-def checkIfCalibrationNeeded(folderPath: str):
+def checkForCalibrationFiles(folderPath: str):
     # Take the path of all numpy files in the given folder
     paraFiles = []
     print(str(dt.datetime.now()) + " : Checking for existing calibration files.")
@@ -172,3 +190,85 @@ def checkIfCalibrationNeeded(folderPath: str):
         return True
     print(str(dt.datetime.now()) + " : I cant find needed calibration files.")
     return False
+
+# -------------------------------------------------------------------------------------------------------------------- #
+
+def findFocalLength(imgPath: str, exportFolderPath: str):
+    imageFiles = []
+    for r, d, f in os.walk(imgPath):
+        for imgFormat in imgFileFormats:
+            for file in f:
+                if imgFormat in file:
+                    imageFiles.append(os.path.join(r, file))
+    imageFiles.sort()
+    # print(imageFiles)  # For debugging
+
+    print(str(dt.datetime.now()) + " : Reading Focal Length from image %s" % os.path.basename(imageFiles[0]))
+    # Get exif data in order to get focal length.
+    exif_img = PIL.Image.open(imageFiles[0])
+
+    exif_data = {
+        PIL.ExifTags.TAGS[k]: v
+        for k, v in exif_img._getexif().items()
+        if k in PIL.ExifTags.TAGS}
+
+    # Get focal length in tuple form
+    focal_length_exif = exif_data['FocalLength']
+
+    # Get focal length in decimal form
+    focal_length = focal_length_exif[0] / focal_length_exif[1]
+
+    # Save focal length
+    np.save(exportFolderPath + "focalLength", focal_length)
+    print(focal_length)
+
+    return True
+
+# -------------------------------------------------------------------------------------------------------------------- #
+
+def findFocalLengthApproximate(imgPath: str, exportFolderPath: str):
+    imageFiles = []
+    for r, d, f in os.walk(imgPath):
+        for imgFormat in imgFileFormats:
+            for file in f:
+                if imgFormat in file:
+                    imageFiles.append(os.path.join(r, file))
+    imageFiles.sort()
+    # print(imageFiles)  # For debugging
+
+    print(str(dt.datetime.now()) + " : Calculate Focal Length.")
+    # Get exif data in order to get focal length.
+    img = cv.imread(imageFiles[0], 0)
+    h, w = img.shape[:2]
+
+    # Get focal length in tuple form
+    meanPixelSize = 0.046
+    focal_length = (0.7*w + w)/2 * meanPixelSize
+
+    # Save focal length
+    np.save(exportFolderPath + "focalLength", focal_length)
+    print(focal_length)
+
+    return True
+
+# -------------------------------------------------------------------------------------------------------------------- #
+
+def readFocalLength(folderPath: str):
+    # Take the path of all numpy files in the given folder
+    focalLength = None
+    paraFiles = []
+    print(str(dt.datetime.now()) + " : Reading parameter files.")
+    for r, d, f in os.walk(folderPath):
+        for file in f:
+            if calibFormat in file:
+                paraFiles.append(os.path.join(r, file))
+    paraFiles.sort()
+    # print(paraFiles) # for debugging
+
+    for file in paraFiles:
+        if "focalLength" in file:
+            focalLength = np.load(file)
+
+    if focalLength is None:
+        return False, None
+    return True, focalLength
