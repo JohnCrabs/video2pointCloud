@@ -8,6 +8,9 @@ import datetime as dt
 These libraries are imported from pointCloudCreation.img2pcl.calibrationCMR
 """
 
+# This file is still on developement stage. Though the algorithm is on a good level and anyone 
+# who knows how to perform SFM can download and write the missing parts.
+
 H_MIN_SIZE = 2048
 W_MIN_SIZE = 2048
 
