@@ -1,5 +1,7 @@
 from img2pointCloud.calibrationCMR import *
 
+import math as math
+
 """
 import os
 import cv2 as cv
@@ -7,9 +9,6 @@ import datetime as dt
 
 These libraries are imported from pointCloudCreation.img2pcl.calibrationCMR
 """
-
-# This file is still on developement stage. Though the algorithm is on a good level and anyone 
-# who knows how to perform SFM can download and write the missing parts.
 
 H_MIN_SIZE = 2048
 W_MIN_SIZE = 2048
@@ -58,10 +57,12 @@ class Point2D:
 
 
 class Point3D:
-    id: int
     x: float
     y: float
     z: float
+
+    def point_info(self):
+        print("(x, y, z) = ( ", self.x, ", ", self.y, ", ", self.z, " )")
 
 
 # -------------------------------------------------------------- #
@@ -168,6 +169,7 @@ class PoseMatrix:
 
         return R, t
 
+
 # -------------------------------------------------------------- #
 # 0.c.pose) ProjectionMatrix
 # -------------------------------------------------------------- #
@@ -253,7 +255,6 @@ class Image:
         self.camera_down.approximateCameraParameters(size=size)
         self.camera_down.setCameraMatrix()
 
-
 # -------------------------------------------------------------- #
 # 0.c.b_img) MatchImg
 # -------------------------------------------------------------- #
@@ -300,10 +301,45 @@ class MatchImg:
 # 0.c.b_img) BlockImg
 # -------------------------------------------------------------- #
 
+class Landmark:
+    id: int
+    point3d = Point3D()
+    img_seen = 0
+
+    def set_landmark(self, index, p3d: Point3D, seen):
+        self.id = index
+        self.point3d = p3d
+        self.img_seen = seen
+
+    def add_another_pair(self, p3d: Point3D):
+        self.point3d.x += p3d.x
+        self.point3d.y += p3d.y
+        self.point3d.z += p3d.z
+        self.img_seen += 1
+
+    def set_true_landmark(self):
+        self.point3d.x /= self.img_seen - 1
+        self.point3d.y /= self.img_seen - 1
+        self.point3d.z /= self.img_seen - 1
+
+    def take_avg_landmark(self):
+        pt = Point3D
+        pt.x = self.point3d.x / (self.img_seen - 1)
+        pt.y = self.point3d.y / (self.img_seen - 1)
+        pt.z = self.point3d.z / (self.img_seen - 1)
+
+        return pt
+
+
+# -------------------------------------------------------------- #
+# 0.c.b_img) BlockImg
+# -------------------------------------------------------------- #
+
 
 class BlockImg:
     image = []
     matches = []
+    landmark = []
 
     prev_pose_L = PoseMatrix()
     curr_pose_R = PoseMatrix()
@@ -417,6 +453,7 @@ class BlockImg:
 
         # Create matches
         matchCounter = 1
+        landmark_left_index = []
         for index_L in range(0, len(self.image) - 1):  # Take index for left image (src)
             for index_R in range(index_L + 1, len(self.image)):  # Take index for right image (dst)
                 print("")
@@ -425,7 +462,7 @@ class BlockImg:
 
                 match_tmp = MatchImg()  # Create temporary class match
                 match_tmp.set_id(matchCounter - 1)  # Set the match pair id. The id starts from 0 and calculated as
-                                                    # (matchCounter - 1) = 1 - 1 = 0 for the first loop
+                # (matchCounter - 1) = 1 - 1 = 0 for the first loop
                 match_tmp.setImages(self.image[index_L], self.image[index_R])  # Set the images
                 message = "Create match between %s" % match_tmp.imgL.name + " and " + "%s." % match_tmp.imgR.name
                 print_message(message)
@@ -450,12 +487,12 @@ class BlockImg:
                         pointIndexRightImg.append(m.trainIdx)
 
                 # Set lists to np.array()
-                goodMatches = np.array(goodMatches)
-                pointsLeftImg = np.array(pointsLeftImg)
-                pointsRightImg = np.array(pointsRightImg)
+                goodMatches = np.array(goodMatches)  # goodMatches = matches who passes Lowe's ratio test
+                pointsLeftImg = np.array(pointsLeftImg)  # pointsLeftImg = coordinates (i,j) for left img
+                pointsRightImg = np.array(pointsRightImg)  # pointsRightImg = coordinates (i,j) for right img
 
-                pointIndexLeftImg = np.array(pointIndexLeftImg)
-                pointIndexRightImg = np.array(pointIndexRightImg)
+                pointIndexLeftImg = np.array(pointIndexLeftImg)  # pointIndexLeftImg = index for pointsLeftImg
+                pointIndexRightImg = np.array(pointIndexRightImg)  # pointIndexRightImg = index for pointsRightImg
 
                 match_tmp.setGoodMatches(goodMatches)  # Save the good matches
                 match_tmp.setGoodPointsLeft(pointsLeftImg, pointIndexLeftImg)  # Save the good points left
@@ -469,7 +506,12 @@ class BlockImg:
                 E, mask = cv.findEssentialMat(pointsLeftImg, pointsRightImg, cam_mtrx, cv.RANSAC)
 
                 # Calculate pose matrix R and t
+                # poseVal = The number of pose points (we'll use these points to create the cloud)
+                #    R    = Rotate Matrix
+                #    t    = Translate Matrix
+                #  mask   = Take values 0 and 1 and if 1 this point is pose point (object point)
                 poseVal, R, t, mask = cv.recoverPose(E, pointsLeftImg, pointsRightImg, cam_mtrx)
+                poseMask = mask  # Keep the mask in a variable poseMask (I done this for easier code reading)
 
                 # Create a temporary pose mtrx for calculations
                 pose_tmp = PoseMatrix()
@@ -489,27 +531,93 @@ class BlockImg:
                                                 np.transpose(pointsRightImg), np.transpose(pointsRightImg))
 
                 # If there are more than 2 images
+                kp_used = []  # This keypoints has been used in previous paring
                 if match_tmp.id > 0:
+
+                    for index_curr in match_tmp.g_points_left_ids:  # Read g_points_left ids now
+                        same_found = False  # Create a boolean to check if there are the same kp is found in 2 pairs
+                        for index_prev in self.matches[match_tmp.id - 1].g_points_left_ids:  # Read g_
+                                                                                             # points_left ids prev
+                            if index_curr == index_prev:  # if two index are same
+                                same_found = True  # set boolean to True
+                                break  # break the loop
+                        if same_found:  # if boolean true
+                            kp_used.append(index_curr)  # append the index
+                        else:  # else
+                            kp_used.append(-1)  # set -1 value, array indexes must be >= 0
+
+                    # print(len(match_tmp.g_points_left_ids))
+                    # print(len(self.matches[match_tmp.id - 1].g_points_left_ids))
+                    # print(len(kp_used))
+
                     scale = 0.0  # Create scale value
-                    kp_counter = 0  # Key-point counter
+                    scale_counter = 0  # Scale counter
 
                     prev_R, prev_t = self.prev_pose_L.take_R_and_t()  # Split previous pose matrix
                     camera_prev_xyz = prev_t  # cam_x = prev_t, cam_y = prev_t, cam_z = prev_t
 
-                    print(camera_prev_xyz)
+                    # print(camera_prev_xyz)  # Uncomment for debugging
 
-                    '''
                     point3D_tmp = []
+                    avg_landmark_tmp = []
+                    landmark_index_tmp = []
 
-                    for index in range(0, len(goodMatches)):
-                        if mask[index]:
-                            kp_counter += 1
-                            p_x = points4D[0][index] / points4D[3][index]
-                            p_y = points4D[1][index] / points4D[3][index]
-                            p_z = points4D[2][index] / points4D[3][index]
-                            p_xyz = [p_x, p_y, p_z]
-                            point3D_tmp.append(p_xyz)
+                    for index in range(0, len(goodMatches)):  # for each point in goodMatches
+                        kp_index = kp_used[index]  # Take the index in kp_used
+                        if poseMask[index] and kp_index is not -1:  # if is masked and there is a landmark
+                            for i in range(0, len(landmark_left_index)):  # find which landmark it is
+                                #print(kp_index, landmark_left_index[i])
+                                if kp_index is landmark_left_index[i]:
+                                    #  Calculate coords for the new point
+                                    p = Point3D()
+                                    p.x = points4D[0][index] / points4D[3][index]
+                                    p.y = points4D[1][index] / points4D[3][index]
+                                    p.z = points4D[2][index] / points4D[3][index]
+
+                                    #  Calculate coords for the old point
+                                    avr_landmark_p = self.landmark[i].take_avg_landmark
+
+                                    point3D_tmp.append(p)  # Set new point
+                                    avg_landmark_tmp.append(avr_landmark_p)  # Set landmark curr average
+                                    landmark_index_tmp.append(i)  # Set landmark indexing
                     '''
+                    # Uncomment for debugging
+                    for point in point3D_tmp:
+                        point.point_info()
+                    '''
+                    # print(len(point3D_tmp))
+
+                    for p1 in range(0, len(point3D_tmp)-1):
+                        for p2 in range(p1+1, len(point3D_tmp)):
+                            dp_1 = euclideanDist(point3D_tmp[p1], point3D_tmp[p2])
+                            dp_2 = euclideanDist(avg_landmark_tmp[p1], avg_landmark_tmp[p2])
+
+                            print(dp_1, " ", dp_2)
+
+                for index in range(0, len(goodMatches)):
+                    if poseMask[index]:
+                        prev_id = match_tmp.g_points_left_ids[index]
+
+                        p = Point3D()
+                        landM = Landmark()
+
+                        p.x = points4D[0][index] / points4D[3][index]
+                        p.y = points4D[1][index] / points4D[3][index]
+                        p.z = points4D[2][index] / points4D[3][index]
+
+                        kp_index = -1
+                        if len(kp_used) is not 0:
+                            kp_index = kp_used[index]
+                        if kp_index is not -1:
+                            for i in range(0, len(landmark_left_index)):
+                                if kp_index is landmark_left_index[i]:
+                                    self.landmark[i].add_another_pair(landM.point3d)
+                        else:
+                            landM.set_landmark(len(self.landmark), p, 2)  # Create new landmark
+                            self.landmark.append(landM)  # Append new landmark
+                            #print(prev_id)
+                            landmark_left_index.append(prev_id)
+
                 # Append match_tmp to self.matches list
                 self.matches.append(match_tmp)
 
@@ -517,6 +625,8 @@ class BlockImg:
                 self.prev_pose_L.setPoseMtrx(self.curr_pose_R.T_mtrx)
                 matchCounter += 1
 
+        for index in range(0, len(self.landmark)):
+            self.landmark[index].set_true_landmark()
 
 # -------------------------------------------------------------- #
 # 0.f) Useful Functions
@@ -588,6 +698,16 @@ def imgDownsample(image, imgSize: Size, showMessages=True):
 
     return image_downsample, imgNewSize
 
+
+def euclideanDist(pt3d_1: Point3D, pt3d_2: Point3D):
+    dx = pt3d_1.x - pt3d_2.x
+    dy = pt3d_1.y - pt3d_2.y
+    dz = pt3d_1.z - pt3d_2.z
+
+    dist = dx*dx + dy*dy + dz*dz
+    dist = math.sqrt(dist)
+
+    return dist
 
 # -------------------------------------------------------------------------------------------------------------------- #
 # 1) CrabSFM : Core Function. Call this function to run Structure from Motion Algorithm
