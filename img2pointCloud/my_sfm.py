@@ -23,6 +23,17 @@ class Point3d:
         self.z = z
 
 
+class Color:
+    r: int
+    g: int
+    b: int
+
+    def set_color(self, r: int, g: int, b: int):
+        self.r = r
+        self.g = g
+        self.b = b
+
+
 class Camera:
     fx = 1.0
     fy = 1.0
@@ -226,9 +237,10 @@ class MatchImages:
     f_pts_R = []
     f_pts_indexes_L = []
     f_pts_indexes_R = []
+    colors = []
 
     def set_match(self, m_id: int, imgL_id: int, imgR_id: int, g_matches: [], g_matches_L: [], g_matches_R: [],
-                  g_matches_id_L: [], g_matches_id_R: []):
+                  g_matches_id_L: [], g_matches_id_R: [], colors: []):
         self.match_id = m_id
         self.img_L_id = imgL_id
         self.img_R_id = imgR_id
@@ -237,18 +249,23 @@ class MatchImages:
         self.f_pts_R = g_matches_R
         self.f_pts_indexes_L = g_matches_id_L
         self.f_pts_indexes_R = g_matches_id_R
+        self.colors = colors
 
 
 class Landmark:
     l_id: int
     pnt3d: Point3d
+    color: Color
     seen = 0
 
-    def set_landmark(self, l_id: int, x: float, y: float, z: float, seen: int):
+    def set_landmark(self, l_id: int, x: float, y: float, z: float, seen: int, r=0, g=0, b=0):
         self.l_id = l_id
         pnt = Point3d()
         pnt.set_point(x, y, z)
         self.pnt3d = pnt
+        col = Color()
+        col.set_color(r, g, b)
+        self.color = col
         self.seen = seen
 
 
@@ -317,7 +334,7 @@ class BlockImage:
         matchSize = 0
         block_size = len(self.images)
         for i in range(1, block_size):
-            matchSize += block_size - i
+            matchSize += 1
 
         print_message("Needs to perform %d matches." % matchSize)
 
@@ -374,6 +391,7 @@ class BlockImage:
             points_L_img_ids = np.array(points_L_img_ids)
             points_R_img_ids = np.array(points_R_img_ids)
 
+            # This PROCESS OVERWORK THE APPLICATION
             if self.fast is not True:
                 img_L.append_match_ids(points_L_img_ids, points_R_img_ids)  # Create a list with all good matches
 
@@ -381,6 +399,7 @@ class BlockImage:
             print_message("Calculate inlier matches.")
             pts_L_fund = np.int32(points_L_img)  # Transform float to int32
             pts_R_fund = np.int32(points_R_img)  # Transform float to int32
+
             F, mask = cv.findFundamentalMat(pts_L_fund, pts_R_fund)  # Find fundamental matrix using RANSARC
             # We select only inlier points
             pts_inlier_matches = good_matches[mask.ravel() == 1]
@@ -391,6 +410,11 @@ class BlockImage:
             pts_inlier_R_ids = points_R_img_ids[mask.ravel() == 1]  # Select inliers from imgR_index
                                                                         # using fundamental mask
 
+            # Calculate the Color of an Image
+            pts_L_fund = pts_L_fund[mask.ravel() == 1]
+            color_inlier = find_color_list(img_L, pts_L_fund)
+            #print(colors)
+
             match_tmp = MatchImages()  # Create a temporary match item
             #match_tmp.set_match(m_id=matchCounter-1, imgL_id=img_L.id, imgR_id=img_R.id, g_matches=good_matches,
             #                    g_matches_L=points_L_img, g_matches_R=points_R_img,
@@ -398,7 +422,8 @@ class BlockImage:
 
             match_tmp.set_match(m_id=matchCounter-1, imgL_id=img_L.id, imgR_id=img_R.id,
                                 g_matches=pts_inlier_matches, g_matches_L=pts_inlier_L, g_matches_R=pts_inlier_R,
-                                g_matches_id_L=pts_inlier_L_ids, g_matches_id_R=pts_inlier_R_ids)
+                                g_matches_id_L=pts_inlier_L_ids, g_matches_id_R=pts_inlier_R_ids,
+                                colors=color_inlier)
 
             g_pnt_size = len(good_matches)  # Find the size of q_pnts
             inliers_size = len(pts_inlier_L_ids)  # Find the size of inliers
@@ -487,7 +512,9 @@ class BlockImage:
                 print_message("Calculate inlier matches.")
                 pts_L_fund = np.int32(points_L_img)  # Transform float to int32
                 pts_R_fund = np.int32(points_R_img)  # Transform float to int32
+
                 F, mask = cv.findFundamentalMat(pts_L_fund, pts_R_fund)  # Find fundamental matrix using RANSARC
+
                 # We select only inlier points
                 pts_inlier_matches = good_matches[mask.ravel() == 1]
                 pts_inlier_L = points_L_img[mask.ravel() == 1]  # Select inliers from imgL using fundamental mask
@@ -497,14 +524,20 @@ class BlockImage:
                 pts_inlier_R_ids = points_R_img_ids[mask.ravel() == 1]  # Select inliers from imgR_index
                                                                         # using fundamental mask
 
-                match_tmp = MatchImages()  # Create a temporary match item
+                # Calculate the Color of an Image
+                pts_L_fund = pts_L_fund[mask.ravel() == 1]
+                color_inlier = find_color_list(img_L, pts_L_fund)
+                # print(colors)
+
+                #match_tmp = MatchImages()  # Create a temporary match item
                 #match_tmp.set_match(m_id=matchCounter-1, imgL_id=img_L.id, imgR_id=img_R.id, g_matches=good_matches,
                 #                    g_matches_L=points_L_img, g_matches_R=points_R_img,
-                #                    g_matches_id_L=points_L_img_ids, g_matches_id_R=points_R_img_ids)
+                #                    g_matches_id_L=points_L_img_ids, g_matches_id_R=points_R_img_ids, colors=colors)
 
                 match_tmp.set_match(m_id=matchCounter-1, imgL_id=img_L.id, imgR_id=img_R.id,
                                     g_matches=pts_inlier_matches, g_matches_L=pts_inlier_L, g_matches_R=pts_inlier_R,
-                                    g_matches_id_L=pts_inlier_L_ids, g_matches_id_R=pts_inlier_R_ids)
+                                    g_matches_id_L=pts_inlier_L_ids, g_matches_id_R=pts_inlier_R_ids,
+                                    colors=color_inlier)
 
                 g_pnt_size = len(good_matches)  # Find the size of q_pnts
                 inliers_size = len(pts_inlier_L_ids)  # Find the size of inliers
@@ -551,6 +584,7 @@ class BlockImage:
         # Landmark Founder
         matchCounter = 1
         landmarkCounter = 0
+        #landmark_kp_indexes = []
         for match in self.matches:  # for each matching pair
 
             imgL_index = match.img_L_id  # read left img id
@@ -566,7 +600,9 @@ class BlockImage:
             pts_inlier_R = match.f_pts_R  # read good matching points right
 
             pts_inlier_L_ids = match.f_pts_indexes_L  # read good matching points left indexes
-            pts_inlier_R_ids = match.f_pts_indexes_R  # read good matching points right indexes
+            #pts_inlier_R_ids = match.f_pts_indexes_R  # read good matching points right indexes
+
+            colors = match.colors
 
             print("")
             message = "(%d / " % matchCounter + "%d)" % matchSize
@@ -610,7 +646,7 @@ class BlockImage:
                                                  # imgL.T_mtrx[0].T_mtrx is always the matrix of the left img
             pose_mtrx_R = PoseMatrix()
             pose_mtrx_R.setPoseMatrix_R_t(R, t)
-            pose_mtrx_R.set_pose_mtrx_using_pair(pose_mtrx_L_T)
+            #pose_mtrx_R.set_pose_mtrx_using_pair(pose_mtrx_L_T)
 
             proj_mtrx_L_P = imgL.P_mtrx.P_mtrx
 
@@ -642,40 +678,43 @@ class BlockImage:
                                             projMatr2=proj_mtrx_R_P,
                                             projPoints1=triang_pnts_L,
                                             projPoints2=triang_pnts_R)
-
             #print(points4D)  # Uncomment for debugging
 
+            '''
+                Here we need to write code to check if the p4D and landmark points are the same in both images
+                and re-project the next landmark to previous
+            '''
+
             # Find Good LandMark Points and Set Them to List
+            if poseVal > 0.6*g_p_size:
+                for l_index in range(0, g_p_size):
+                    if poseMask[l_index] != 0:
+                        #print(poseMask[l_index]) # Uncomment for debugging
+                        #print(l_index)  # Uncomment for debugging
 
-            for l_index in range(0, g_p_size):
-                if poseMask[l_index] != 0:
-                    #print(poseMask[l_index]) # Uncomment for debugging
-                    #print(l_index)  # Uncomment for debugging
+                        pt3d = Point3d()
 
-                    pt3d = Point3d()
+                        pt3d.x = points4D[0][l_index] / points4D[3][l_index]
+                        pt3d.y = points4D[1][l_index] / points4D[3][l_index]
+                        pt3d.z = points4D[2][l_index] / points4D[3][l_index]
 
-                    pt3d.x = points4D[0][l_index] / points4D[3][l_index]
-                    pt3d.y = points4D[1][l_index] / points4D[3][l_index]
-                    pt3d.z = points4D[2][l_index] / points4D[3][l_index]
+                        #pnt_img_L = pts_inlier_L_ids[l_index]
+                        #pnt_img_R = pts_inlier_R_ids[l_index]
 
-                    pnt_img_L = pts_inlier_L_ids[l_index]
-                    pnt_img_R = pts_inlier_R_ids[l_index]
-
-                    #print("[", imgL_index, imgR_index, "] = [", pnt_img_L, pnt_img_R, "]")  # Uncomment for debugging
-                    if self.fast is not True:
-                        if imgL.check_if_there_is_kp_match(pnt_img_L, imgR_index, pnt_img_R):
-                            print("match")
+                        index = False
+                        if index is True:
+                            # In this if we need to create a checking algorithm
+                            print("never")
                         else:
+                            # OpenCV images are in BGR system so b=0, g=1, r=2
+                            r = colors[l_index][0]
+                            g = colors[l_index][1]
+                            b = colors[l_index][2]
+                            #print(r, g, b)
                             l_pnt = Landmark()
-                            l_pnt.set_landmark(landmarkCounter, pt3d.x, pt3d.y, pt3d.z, 1)
+                            l_pnt.set_landmark(landmarkCounter, pt3d.x, pt3d.y, pt3d.z, 1, r, g, b)
                             self.landmark.append(l_pnt)
                             landmarkCounter += 1
-                    else:
-                        l_pnt = Landmark()
-                        l_pnt.set_landmark(landmarkCounter, pt3d.x, pt3d.y, pt3d.z, 1)
-                        self.landmark.append(l_pnt)
-                        landmarkCounter += 1
-
             matchCounter += 1  # increase the matchCounter
 
     def transform_landmark_to_list(self):
@@ -685,8 +724,13 @@ class BlockImage:
             x = l_pnt.pnt3d.x
             y = l_pnt.pnt3d.y
             z = l_pnt.pnt3d.z
+            r = l_pnt.color.r
+            g = l_pnt.color.g
+            b = l_pnt.color.b
             pt_tmp = [x, y, z]
-            col = [128, 128, 128]
+            #col = [0, 0, 0]
+            col = [r, g, b]
+            #print(col)
             points.append(pt_tmp)
             colors.append(col)
             #print(pt_tmp)
@@ -701,10 +745,11 @@ class BlockImage:
 # -------------------------------------------------------------- #
 
 
-def run_Sfm(src: str, exportCloud: str, fast=True):
+def run_Sfm(src: str, exportCloud: str, fast=False):
     """
     This function read all images in folder src and run the sfm pipeline to create a point cloud (model) end export
     it an *.ply file in the exportCloud path.
+    :param fast:
     :param src: The relative or absolute path to the folder
     :param exportCloud: The relative or absolute path to the export folder/file
     :return: True when the process finished
@@ -716,6 +761,7 @@ def run_Sfm(src: str, exportCloud: str, fast=True):
     block.find_features()
     block.feature_info()
     block.match_images_fast()
+    #block.match_images()
     block.find_landmarks()
     points, colors = block.transform_landmark_to_list()
     #print("")
@@ -885,3 +931,46 @@ def create_output(vertices, colors, filename):
     with open(filename, 'w') as f:
         f.write(ply_header % dict(vert_num=len(vertices)))
         np.savetxt(f, vertices, '%f %f %f %d %d %d')
+
+
+def findMax_2x2(mtrx):
+    x = 0
+    y = 0
+
+    for m in mtrx:
+        if x < m[0]:
+            x = m[0]
+        if y < m[1]:
+            y = m[1]
+    return x, y
+
+
+def find_color_list(img: Image, pts_inlier: []):
+    colors = []
+    img_open = cv.imread(img.src)
+    img_size = img_open.shape
+    img_open, img_size = imgDownsample(img_open, img_size[1], img_size[0])
+    #img_draw_kp = cv.drawKeypoints(img_L_open, kp_match_L_inlier, None, color=(0, 255, 0), flags=0)
+    # cv.imwrite("./img.jpg", img_draw_kp)
+
+    blue = img_open[:, :, 0]
+    green = img_open[:, :, 1]
+    red = img_open[:, :, 2]
+    # cv.imwrite("./blue.jpg", blue)
+    # cv.imwrite("./green.jpg", green)
+    # cv.imwrite("./red.jpg", red)
+    # cv.imwrite("./img.jpg", img_L_open)
+    # x, y = findMax_2x2(pts_L_fund)
+    # print(x, y)
+    for indx in pts_inlier:
+        i_L = indx[1]
+        j_L = indx[0]
+        # print(i_L)
+        # print(j_L)
+        col_r = red[i_L][j_L]
+        col_g = green[i_L][j_L]
+        col_b = blue[i_L][j_L]
+        col = [col_r, col_g, col_b]
+        # col = [0, 150, 0]
+        colors.append(col)
+    return colors
